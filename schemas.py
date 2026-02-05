@@ -15,7 +15,7 @@ class PersonResponse(BaseModel):
     phone: str
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 # this is a test comment for git
 # برای کاربران

@@ -6,6 +6,11 @@ from sqlalchemy.orm import Session
 import uvicorn
 from datetime import datetime, timedelta
 from typing import Optional
+from minio import Minio
+from minio.error import S3Error
+from fastapi import UploadFile, File
+import uuid
+import os
 
 # برای هش کردن پسورد و JWT
 from passlib.context import CryptContext
@@ -27,6 +32,21 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+MINIO_ENDPOINT = "172.25.229.122:9000"
+MINIO_ACCESS_KEY = "QY3AOZRE6M9AIMQLXQEJ"
+MINIO_SECRET_KEY = "hEiS8O4hcqCsIbMF8EHXWDgq6SXevejusbyczMeR"
+# MINIO_ACCESS_KEY = "admin"
+# MINIO_SECRET_KEY = "admin123"
+MINIO_BUCKET_NAME = "images"
+
+minio_client = Minio(
+    MINIO_ENDPOINT,
+    access_key=MINIO_ACCESS_KEY,
+    secret_key=MINIO_SECRET_KEY,
+    secure=False,  # چون http است
+)
+
 
 # --- تنظیمات امنیتی JWT ---
 SECRET_KEY = "replace_this_with_a_strong_secret_key"  # حتما در تولید/پروژه واقعی تغییر بده
@@ -63,6 +83,13 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
 # -------------------------------
 # اندپوینت: ثبت‌نام کاربر
 # -------------------------------
+# @app.on_event("startup")
+def create_bucket():
+    found = minio_client.bucket_exists(MINIO_BUCKET_NAME)
+    if not found:
+        minio_client.make_bucket(MINIO_BUCKET_NAME)
+
+
 @app.post("/register", response_model=Token)
 def register(user_in: UserCreate, db: Session = Depends(get_db)):
     # بررسی وجود username
@@ -157,6 +184,43 @@ def get_person(national_code: str, db: Session = Depends(get_db), username: str 
         raise HTTPException(status_code=404, detail="فردی با این کد ملی یافت نشد")
     return person
 
+@app.post("/upload-image")
+def upload_image(file: UploadFile = File(...),):
+    create_bucket()
+    # 1. بررسی نوع فایل
+    if file.content_type not in ["image/jpeg", "image/png"]:
+        raise HTTPException(
+            status_code=400,
+            detail="فقط فایل تصویری jpg یا png مجاز است"
+        )
+
+    # 2. ساخت نام یکتا
+    file_ext = os.path.splitext(file.filename)[1]
+    # file_ext = 'temp'
+    object_name = f"{uuid.uuid4()}{file_ext}"
+
+    try:
+        # 3. آپلود در MinIO
+        minio_client.put_object(
+            bucket_name=MINIO_BUCKET_NAME,
+            object_name=object_name,
+            data=file.file,
+            length=-1,
+            part_size=10 * 1024 * 1024,
+            content_type=file.content_type
+        )
+
+    except S3Error as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return {
+        "message": "تصویر با موفقیت آپلود شد",
+        "object_name": object_name,
+        "bucket": MINIO_BUCKET_NAME
+    }
+
+
+
 if __name__ == "__main__":
     # this is a comment
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8002, reload=True)
