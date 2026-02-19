@@ -26,3 +26,14 @@ class UserCreate(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+
+
+from typing import Optional
+from pydantic import BaseModel
+
+class PersonUpdate(BaseModel):
+    firstname: Optional[str] = None 
+    lastname: Optional[str] = None  
+    address: Optional[str] = None   
+    phone: Optional[str] = None 

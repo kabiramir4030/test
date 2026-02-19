@@ -18,7 +18,7 @@ from jose import JWTError, jwt
 
 import models
 from database import SessionLocal, engine
-from schemas import PersonCreate, PersonResponse, UserCreate, Token
+from schemas import PersonCreate, PersonResponse, UserCreate, Token, PersonUpdate
 
 # ساخت جداول
 models.Base.metadata.create_all(bind=engine)
@@ -51,7 +51,7 @@ minio_client = Minio(
 # --- تنظیمات امنیتی JWT ---
 SECRET_KEY = "replace_this_with_a_strong_secret_key"  # حتما در تولید/پروژه واقعی تغییر بده
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 1  # یک روز، می‌تونی کم/زیاد کنی
+ACCESS_TOKEN_EXPIRE_MINUTES = 60  # یک روز، می‌تونی کم/زیاد کنی
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -184,6 +184,50 @@ def get_person(national_code: str, db: Session = Depends(get_db), username: str 
         raise HTTPException(status_code=404, detail="فردی با این کد ملی یافت نشد")
     return person
 
+@app.put("/edit-person/{national_code}", response_model=PersonResponse)
+def edit_person(
+    national_code: str,
+    person_update: PersonUpdate,
+    db: Session = Depends(get_db),
+    username: str = Depends(get_current_username)  # اگر می‌خواهی محافظت‌شده باشد
+):
+    person = db.query(models.Person).filter(
+        models.Person.national_code == national_code
+    ).first()
+
+    if not person:
+        raise HTTPException(status_code=404, detail="فردی با این کد ملی یافت نشد")
+
+    # فقط فیلدهایی که ارسال شده‌اند آپدیت شوند
+    update_data = person_update.dict(exclude_unset=True)
+
+    for key, value in update_data.items():
+        setattr(person, key, value)
+
+    db.commit()
+    db.refresh(person)
+
+    return person
+
+@app.delete("/delete-person/{national_code}")
+def delete_person(
+    national_code: str,
+    db: Session = Depends(get_db),
+    username: str = Depends(get_current_username)  # اگر می‌خواهی محافظت‌شده باشد
+):
+    person = db.query(models.Person).filter(
+        models.Person.national_code == national_code
+    ).first()
+
+    if not person:
+        raise HTTPException(status_code=404, detail="فردی با این کد ملی یافت نشد")
+
+    db.delete(person)
+    db.commit()
+
+    return {"message": "فرد با موفقیت حذف شد"}
+
+
 @app.post("/upload-image")
 def upload_image(file: UploadFile = File(...),):
     create_bucket()
@@ -223,4 +267,4 @@ def upload_image(file: UploadFile = File(...),):
 
 if __name__ == "__main__":
     # this is a comment
-    uvicorn.run("main:app", host="0.0.0.0", port=8002, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8003, reload=True)
